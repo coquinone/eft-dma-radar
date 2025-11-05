@@ -16,6 +16,7 @@ using eft_dma_shared.Common.Unity;
 using eft_dma_shared.Common.Unity.LowLevel;
 using System.IO;
 using System.Reflection;
+using System.Text.Json.Nodes;
 using System.Windows;
 using System.Windows.Controls;
 using static eft_dma_radar.Tarkov.API.EFTProfileService;
@@ -197,9 +198,18 @@ public static class ConfigManager
         }
     }
 
-    public static bool SaveConfigToFile(Config config, string path)
+    private static bool SafeSaveConfig(string configJson, string path)
     {
-        return SafeSaveConfig(config, path);
+        try
+        {
+            File.WriteAllText(path, configJson);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            LoneLogging.WriteLine($"[Config] Failed to save config '{path}': {ex}");
+            return false;
+        }
     }
 
     // Load a specific config
@@ -232,11 +242,6 @@ public static class ConfigManager
         return false;
     }
 
-    public static bool SaveCurrentConfigAsNewConfig(string configName)
-    {
-        return SaveConfigAsNewConfig(CurrentConfig, configName);
-    }
-
     public static bool SaveConfigAsNewConfig(Config config, string configName)
     {
         try
@@ -249,13 +254,14 @@ public static class ConfigManager
 
             var options = new JsonSerializerOptions { WriteIndented = true };
             var json = JsonSerializer.Serialize(config, options);
-            var configToSave = JsonSerializer.Deserialize<Config>(json, options);
 
-            configToSave.Filename = configName;
-            configToSave.ConfigName = Path.GetFileNameWithoutExtension(configName);
+            var rootNode = JsonNode.Parse(json);
+
+            rootNode["Filename"] = configName;
+            rootNode["ConfigName"] = Path.GetFileNameWithoutExtension(configName);
 
             var filePath = Path.Combine(CustomConfigDirectory, configName);
-            SafeSaveConfig(configToSave, filePath);
+            SafeSaveConfig(json, filePath);
 
             LoneLogging.WriteLine($"[Config] Saved new config: {configName}");
             return true;
@@ -265,6 +271,11 @@ public static class ConfigManager
             LoneLogging.WriteLine($"[Config] Error saving new config {configName}: {ex}");
             return false;
         }
+    }
+
+    public static bool SaveCurrentConfigAsNewConfig(string configName)
+    {
+        return SaveConfigAsNewConfig(CurrentConfig, configName);
     }
 
     public static bool DeleteConfig(string configName)
