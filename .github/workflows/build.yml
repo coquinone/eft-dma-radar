@@ -3,9 +3,12 @@ name: Build (arena + eft)
 on:
   push:
     branches: [ main, master ]
-    tags: [ "v*" ]
+    tags: [ "v*" ]          # <<< pushing a tag 'v1.2.3' will publish a Release
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: write            # needed to create Releases & upload assets
 
 jobs:
   build-win:
@@ -30,7 +33,7 @@ jobs:
           if ($tag -and ($tag -match '^v\d+\.\d+\.\d+(-[0-9A-Za-z\.-]+)?$')) {
             $ver = $tag.TrimStart('v')          # e.g. 1.2.3 or 1.2.3-rc.1
           } else {
-            $ver = "0.0.0-ci.$sha"              # e.g. 0.0.0-ci.1ae4d38
+            $ver = "0.0.0-ci.$sha"              # e.g. 0.0.0-ci.abcd123
           }
           "version=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           Write-Host "Using Version: $ver"
@@ -79,17 +82,38 @@ jobs:
           -p:PublishSingleFile=false
           -o artifacts/eft
 
-      # ©¤©¤©¤ Upload artifacts ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
-      - name: Upload arena-dma-radar
+      # ©¤©¤©¤ Zip outputs ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
+      - name: Zip artifacts
+        shell: pwsh
+        run: |
+          Compress-Archive -Path artifacts/arena/* -DestinationPath artifacts/arena-${{ steps.vers.outputs.version }}.zip -Force
+          Compress-Archive -Path artifacts/eft/*   -DestinationPath artifacts/eft-${{ steps.vers.outputs.version }}.zip   -Force
+
+      # ©¤©¤©¤ Always keep CI artifacts for downloads from the run page ©¤©¤©¤©¤©¤
+      - name: Upload arena artifact
         uses: actions/upload-artifact@v4
         with:
           name: arena-dma-radar-${{ steps.vers.outputs.version }}
-          path: artifacts/arena/**
+          path: artifacts/arena-${{ steps.vers.outputs.version }}.zip
           if-no-files-found: error
 
-      - name: Upload eft-dma-radar
+      - name: Upload eft artifact
         uses: actions/upload-artifact@v4
         with:
           name: eft-dma-radar-${{ steps.vers.outputs.version }}
-          path: artifacts/eft/**
+          path: artifacts/eft-${{ steps.vers.outputs.version }}.zip
           if-no-files-found: error
+
+      # ©¤©¤©¤ Create GitHub Release & attach zips (only on tags v*) ©¤©¤©¤©¤©¤©¤©¤©¤
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}                 # e.g. v1.2.3
+          tag_name: ${{ github.ref_name }}             # same tag
+          generate_release_notes: true
+          files: |
+            artifacts/arena-${{ steps.vers.outputs.version }}.zip
+            artifacts/eft-${{ steps.vers.outputs.version }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
